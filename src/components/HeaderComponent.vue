@@ -6,7 +6,9 @@
           <div v-if="userRole === 'ADMIN'">
             <v-btn :to="'/member/list'">회원관리</v-btn>
             <v-btn :to="'/product/manage'">상품관리</v-btn>
-            <v-btn :to="'/order/list'">실시간 주문 건수</v-btn>
+            <v-btn href="'/order/list'"
+              >실시간 주문 건수 {{ liveOrderCount }}</v-btn
+            >
           </div>
         </v-col>
         <v-col class="text-center">
@@ -27,14 +29,17 @@
   </v-app-bar>
 </template>
 <script>
+import { cartStore } from "@/store/cart";
+import { EventSourcePolyfill } from "event-source-polyfill";
 import { jwtDecode } from "jwt-decode";
+import axios from "axios";
 
 export default {
   data() {
     return {
       userRole: null,
       isLogined: false,
-      totalQuantity: 0,
+      liveOrderCount: 0,
     };
   },
   created() {
@@ -42,11 +47,41 @@ export default {
     if (accessToken) {
       const payload = jwtDecode(accessToken);
       this.userRole = payload.role;
-      console.log(payload.role);
       this.isLogined = true;
     }
+    if (this.userRole === "ADMIN") {
+      this.sseConnect();
+    }
+  },
+  computed: {
+    totalQuantity() {
+      const store = cartStore();
+      return store.getTotalQuantity;
+    },
   },
   methods: {
+    sseConnect() {
+      const accessToken = localStorage.getItem("accessToken");
+      const sse = new EventSourcePolyfill(
+        `${process.env.VUE_APP_API_BASE_URL}/sse/connect`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+
+      sse.addEventListener("connect", (event) => {
+        console.log(event);
+      });
+      sse.addEventListener("ordered", (event) => {
+        console.log(event);
+        this.liveOrderCount++;
+      });
+      // sse 연결해제를 위한 이벤트 설정
+      window.addEventListener("beforeunload", () => this.disconnect());
+    },
+    async disconnect() {
+      await axios.get(`${process.env.VUE_APP_API_BASE_URL}/sse/disconnect`);
+    },
     doLogout() {
       localStorage.clear();
       this.isLogined = false;
